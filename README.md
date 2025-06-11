@@ -27,6 +27,145 @@ python evaluate.py
 # Open the generated HTML report in your browser
 ```
 
+## Installation Guide
+
+### Prerequisites
+- Python 3.8 or higher
+- pip (Python package installer)
+- Git
+- CUDA-capable GPU (recommended for faster training)
+- 16GB RAM minimum
+- 50GB free disk space
+
+### Step-by-Step Installation
+
+#### 1. Clone the Repository
+```bash
+# Clone the repository to your local machine
+git clone https://github.com/yourusername/genome-annotation-model.git
+
+# Navigate to the project directory
+cd genome-annotation-model
+```
+
+#### 2. Set Up Python Environment
+
+Choose one of the following methods:
+
+##### Option A: Using venv (Recommended)
+```bash
+# Create a virtual environment
+python -m venv venv
+
+# Activate the virtual environment
+# On Windows:
+venv\Scripts\activate
+# On macOS/Linux:
+source venv/bin/activate
+
+# Verify Python version
+python --version  # Should show Python 3.8 or higher
+```
+
+##### Option B: Using conda
+```bash
+# Create a new conda environment
+conda create -n genome-annotation python=3.8
+
+# Activate the environment
+conda activate genome-annotation
+
+# Verify Python version
+python --version  # Should show Python 3.8 or higher
+```
+
+#### 3. Install Dependencies
+```bash
+# Install required packages
+pip install -r requirements.txt
+
+# Verify installation
+python -c "import torch; print(f'PyTorch version: {torch.__version__}')"
+python -c "import numpy; print(f'NumPy version: {numpy.__version__}')"
+```
+
+#### 4. Verify GPU Support (Optional but Recommended)
+```bash
+# Check if CUDA is available
+python -c "import torch; print(f'CUDA available: {torch.cuda.is_available()}')"
+
+# If CUDA is available, check GPU information
+python -c "import torch; print(f'GPU device: {torch.cuda.get_device_name(0) if torch.cuda.is_available() else "No GPU"}')"
+```
+
+#### 5. Download Genome Annotations
+```bash
+# Edit the email in download_annotations.py
+# Replace "your.email@example.com" with your email address
+
+# Run the download script
+python download_annotations.py
+```
+
+### Common Installation Issues and Solutions
+
+#### 1. CUDA Installation Issues
+- **Problem**: CUDA not found
+  - **Solution**: Install NVIDIA CUDA Toolkit from [NVIDIA's website](https://developer.nvidia.com/cuda-downloads)
+  - **Verify**: Run `nvidia-smi` in terminal
+
+#### 2. Python Version Issues
+- **Problem**: Python version too old
+  - **Solution**: Install Python 3.8 or higher from [python.org](https://www.python.org/downloads/)
+  - **Verify**: Run `python --version`
+
+#### 3. Package Installation Issues
+- **Problem**: pip install fails
+  - **Solution**: Update pip first: `python -m pip install --upgrade pip`
+  - **Alternative**: Try installing packages one by one
+
+#### 4. Virtual Environment Issues
+- **Problem**: venv not found
+  - **Solution**: Install venv: `python -m pip install virtualenv`
+  - **Alternative**: Use conda instead
+
+#### 5. Memory Issues
+- **Problem**: Out of memory during installation
+  - **Solution**: Close other applications
+  - **Alternative**: Install packages with `--no-cache-dir` flag
+
+### Post-Installation Verification
+
+Run these commands to verify your installation:
+
+```bash
+# Check Python environment
+python --version
+pip list
+
+# Verify PyTorch installation
+python -c "import torch; print(torch.__version__)"
+
+# Verify CUDA availability
+python -c "import torch; print(torch.cuda.is_available())"
+
+# Test the model
+python model.py --test
+```
+
+### Directory Structure After Installation
+```
+genome-annotation-model/
+├── venv/                  # Virtual environment
+├── data/                  # Downloaded genome annotations
+├── models/               # Saved model checkpoints
+├── results/              # Evaluation results
+│   └── reports/         # HTML evaluation reports
+├── src/                  # Source code
+├── requirements.txt      # Dependencies
+└── README.md            # This file
+```
+
 ## Dataset Overview
 
 The model is trained on genome annotations from 30 diverse species across multiple lineages:
@@ -131,22 +270,6 @@ Results are presented in an interactive HTML report with:
 - CUDA-capable GPU (recommended)
 - 16GB RAM minimum
 - 50GB free disk space
-
-## Installation
-
-### Option 1: Using venv
-```bash
-python -m venv venv
-source venv/bin/activate  # On Windows: venv\Scripts\activate
-pip install -r requirements.txt
-```
-
-### Option 2: Using conda
-```bash
-conda create -n genome-annotation python=3.8
-conda activate genome-annotation
-pip install -r requirements.txt
-```
 
 ## Usage
 
