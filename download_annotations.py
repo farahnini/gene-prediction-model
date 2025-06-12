@@ -1,54 +1,68 @@
 import os
-import requests
-import pandas as pd
-from Bio import Entrez
-from tqdm import tqdm
-import gzip
-import shutil
-from datetime import datetime
-import logging
-import json
-from concurrent.futures import ThreadPoolExecutor, as_completed
 import time
+import logging
+import requests
+from tqdm import tqdm
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
 class GenomeAnnotationDownloader:
-    def __init__(self, email, output_dir="genome_annotations", max_workers=4):
-        """
-        Initialize the downloader with your email (required by NCBI) and output directory.
-        
-        Args:
-            email (str): Your email address (required by NCBI)
-            output_dir (str): Directory to save downloaded annotations
-            max_workers (int): Maximum number of parallel downloads
-        """
-        self.email = email
+    def __init__(self, output_dir: str = "genome_annotations", max_workers: int = 3):
         self.output_dir = output_dir
         self.max_workers = max_workers
-        Entrez.email = email
-        
-        # Setup logging
         self._setup_logging()
-        
-        # Create output directory if it doesn't exist
-        os.makedirs(output_dir, exist_ok=True)
-        
-        # Load species information
-        self.training_species = self._load_species_info()
-        
-        # Track download progress
+        self._setup_directories()
+        self.refseq_delay = 2
+        self.last_refseq_request = 0
+        self.ftp_dirs = {
+            "Homo sapiens": "https://ftp.ncbi.nlm.nih.gov/genomes/all/GCF/000/001/405/GCF_000001405.40_GRCh38.p14/",
+            "Mus musculus": "https://ftp.ncbi.nlm.nih.gov/genomes/all/GCF/000/001/635/GCF_000001635.27_GRCm39/",
+            "Rattus norvegicus": "https://ftp.ncbi.nlm.nih.gov/genomes/all/GCF/036/323/735/GCF_036323735.1_GRCr8/",
+            "Pan troglodytes": "https://ftp.ncbi.nlm.nih.gov/genomes/all/GCF/028/858/775/GCF_028858775.2_NHGRI_mPanTro3-v2.0_pri/",
+            "Gallus gallus": "https://ftp.ncbi.nlm.nih.gov/genomes/all/GCF/016/699/485/GCF_016699485.2_bGalGal1.mat.broiler.GRCg7b/",
+            "Taeniopygia guttata": "https://ftp.ncbi.nlm.nih.gov/genomes/all/GCF/048/771/995/GCF_048771995.1_bTaeGut7.mat/",
+            "Meleagris gallopavo": "https://ftp.ncbi.nlm.nih.gov/genomes/all/GCF/000/146/605/GCF_000146605.3_Turkey_5.1/",
+            "Danio rerio": "https://ftp.ncbi.nlm.nih.gov/genomes/all/GCF/049/306/965/GCF_049306965.1_GRCz12tu/",
+            "Oryzias latipes": "https://ftp.ncbi.nlm.nih.gov/genomes/all/GCF/002/234/675/GCF_002234675.1_ASM223467v1/",
+            "Gasterosteus aculeatus": "https://ftp.ncbi.nlm.nih.gov/genomes/all/GCF/016/920/845/GCF_016920845.1_GAculeatus_UGA_version5/",
+            "Drosophila melanogaster": "https://ftp.ncbi.nlm.nih.gov/genomes/all/GCF/000/001/215/GCF_000001215.4_Release_6_plus_ISO1_MT/",
+            "Apis mellifera": "https://ftp.ncbi.nlm.nih.gov/genomes/all/GCF/003/254/395/GCF_003254395.2_Amel_HAv3.1/",
+            "Bombyx mori": "https://ftp.ncbi.nlm.nih.gov/genomes/all/GCF/030/269/925/GCF_030269925.1_ASM3026992v2/",
+            "Arabidopsis thaliana": "https://ftp.ncbi.nlm.nih.gov/genomes/all/GCF/000/001/735/GCF_000001735.4_TAIR10.1/",
+            "Oryza sativa": "https://ftp.ncbi.nlm.nih.gov/genomes/all/GCF/034/140/825/GCF_034140825.1_ASM3414082v1/",
+            "Zea mays": "https://ftp.ncbi.nlm.nih.gov/genomes/all/GCF/902/167/145/GCF_902167145.1_Zm-B73-REFERENCE-NAM-5.0/",
+            "Glycine max": "https://ftp.ncbi.nlm.nih.gov/genomes/all/GCF/000/004/515/GCF_000004515.6_Glycine_max_v4.0/",
+            "Saccharomyces cerevisiae": "https://ftp.ncbi.nlm.nih.gov/genomes/all/GCF/000/146/045/GCF_000146045.2_R64/",
+            "Schizosaccharomyces pombe": "https://ftp.ncbi.nlm.nih.gov/genomes/all/GCF/000/002/945/GCF_000002945.2_ASM294v3/",
+            "Aspergillus nidulans": "https://ftp.ncbi.nlm.nih.gov/genomes/all/GCF/000/011/425/GCF_000011425.1_ASM1142v1/",
+            # Bacteria
+            "Escherichia coli": "https://ftp.ncbi.nlm.nih.gov/genomes/all/GCF/000/005/845/GCF_000005845.2_ASM584v2/", 
+            "Bacillus subtilis": "https://ftp.ncbi.nlm.nih.gov/genomes/all/GCF/000/009/045/GCF_000009045.1_ASM904v1/", 
+            "Pseudomonas aeruginosa": "https://ftp.ncbi.nlm.nih.gov/genomes/all/GCF/000/006/765/GCF_000006765.1_ASM676v1/",  
+            "Mycobacterium tuberculosis": "https://ftp.ncbi.nlm.nih.gov/genomes/all/GCF/000/195/955/GCF_000195955.2_ASM19595v2/", 
+            # Archaea
+            "Methanocaldococcus jannaschii": "https://ftp.ncbi.nlm.nih.gov/genomes/all/GCF/000/091/665/GCF_000091665.1_ASM9166v1/", 
+            "Sulfolobus solfataricus": "https://ftp.ncbi.nlm.nih.gov/genomes/all/GCF/000/007/765/GCF_000007765.1_ASM776v1/",  
+            "Halobacterium salinarum": "https://ftp.ncbi.nlm.nih.gov/genomes/all/GCF/000/006/805/GCF_000006805.1_ASM680v1/",  
+            # Nematodes
+            "Caenorhabditis elegans": "https://ftp.ncbi.nlm.nih.gov/genomes/all/GCF/000/002/985/GCF_000002985.6_WBcel235/",  
+            "Caenorhabditis briggsae": "https://ftp.ncbi.nlm.nih.gov/genomes/all/GCF/000/004/555/GCF_000004555.2_CB4/" ,  
+             # Amphibians
+            "Xenopus tropicalis": "https://ftp.ncbi.nlm.nih.gov/genomes/all/GCF/000/004/195/GCF_000004195.4_UCB_Xtro_10.0/",
+            "Xenopus laevis": "https://ftp.ncbi.nlm.nih.gov/genomes/all/GCF/001/663/975/GCF_001663975.1_Xenopus_laevis_v2/",
+            # Reptiles
+            "Anolis carolinensis": "https://ftp.ncbi.nlm.nih.gov/genomes/all/GCF/000/090/745/GCF_000090745.1_AnoCar2.0/",  
+            "Python bivittatus": "https://ftp.ncbi.nlm.nih.gov/genomes/all/GCF/000/186/305/GCF_000186305.1_Python_molurus_bivittatus-5.0.2/",
+        }
+        self.training_species = list(self.ftp_dirs.keys())
         self.download_status = {
             'refseq': {},
-            'ensembl': {},
-            'failed': []
+            'last_updated': None
         }
-        
+
     def _setup_logging(self):
-        """Setup logging configuration."""
-        log_dir = os.path.join(self.output_dir, 'logs')
+        log_dir = os.path.join(self.output_dir, "logs")
         os.makedirs(log_dir, exist_ok=True)
-        
-        log_file = os.path.join(log_dir, f'download_{datetime.now().strftime("%Y%m%d_%H%M%S")}.log')
-        
+        log_file = os.path.join(log_dir, f"download_{time.strftime('%Y%m%d_%H%M%S')}.log")
         logging.basicConfig(
             level=logging.INFO,
             format='%(asctime)s - %(levelname)s - %(message)s',
@@ -57,251 +71,115 @@ class GenomeAnnotationDownloader:
                 logging.StreamHandler()
             ]
         )
-        self.logger = logging.getLogger(__name__)
-    
-    def _load_species_info(self):
-        """Load species information from a structured dictionary."""
-        return {
-            # Mammals
-            "Homo sapiens": {"common_name": "Human", "lineage": "Mammals"},
-            "Mus musculus": {"common_name": "Mouse", "lineage": "Mammals"},
-            "Rattus norvegicus": {"common_name": "Rat", "lineage": "Mammals"},
-            "Pan troglodytes": {"common_name": "Chimpanzee", "lineage": "Mammals"},
-            
-            # Birds
-            "Gallus gallus": {"common_name": "Chicken", "lineage": "Birds"},
-            "Taeniopygia guttata": {"common_name": "Zebra finch", "lineage": "Birds"},
-            "Meleagris gallopavo": {"common_name": "Turkey", "lineage": "Birds"},
-            
-            # Fish
-            "Danio rerio": {"common_name": "Zebrafish", "lineage": "Fish"},
-            "Oryzias latipes": {"common_name": "Japanese medaka", "lineage": "Fish"},
-            "Gasterosteus aculeatus": {"common_name": "Stickleback", "lineage": "Fish"},
-            
-            # Insects
-            "Drosophila melanogaster": {"common_name": "Fruit fly", "lineage": "Insects"},
-            "Apis mellifera": {"common_name": "Honey bee", "lineage": "Insects"},
-            "Bombyx mori": {"common_name": "Silkworm", "lineage": "Insects"},
-            
-            # Plants
-            "Arabidopsis thaliana": {"common_name": "Thale cress", "lineage": "Plants"},
-            "Oryza sativa": {"common_name": "Rice", "lineage": "Plants"},
-            "Zea mays": {"common_name": "Maize", "lineage": "Plants"},
-            "Glycine max": {"common_name": "Soybean", "lineage": "Plants"},
-            
-            # Fungi
-            "Saccharomyces cerevisiae": {"common_name": "Baker's yeast", "lineage": "Fungi"},
-            "Schizosaccharomyces pombe": {"common_name": "Fission yeast", "lineage": "Fungi"},
-            "Aspergillus nidulans": {"common_name": "Aspergillus", "lineage": "Fungi"},
-            
-            # Bacteria
-            "Escherichia coli": {"common_name": "E. coli", "lineage": "Bacteria"},
-            "Bacillus subtilis": {"common_name": "B. subtilis", "lineage": "Bacteria"},
-            "Pseudomonas aeruginosa": {"common_name": "P. aeruginosa", "lineage": "Bacteria"},
-            "Mycobacterium tuberculosis": {"common_name": "M. tuberculosis", "lineage": "Bacteria"},
-            
-            # Archaea
-            "Methanocaldococcus jannaschii": {"common_name": "Methanococcus", "lineage": "Archaea"},
-            "Sulfolobus solfataricus": {"common_name": "Sulfolobus", "lineage": "Archaea"},
-            "Halobacterium salinarum": {"common_name": "Halobacterium", "lineage": "Archaea"},
-            
-            # Nematodes
-            "Caenorhabditis elegans": {"common_name": "C. elegans", "lineage": "Nematodes"},
-            "Caenorhabditis briggsae": {"common_name": "C. briggsae", "lineage": "Nematodes"},
-            
-            # Amphibians
-            "Xenopus tropicalis": {"common_name": "Western clawed frog", "lineage": "Amphibians"},
-            "Xenopus laevis": {"common_name": "African clawed frog", "lineage": "Amphibians"},
-            
-            # Reptiles
-            "Anolis carolinensis": {"common_name": "Green anole", "lineage": "Reptiles"},
-            "Python bivittatus": {"common_name": "Burmese python", "lineage": "Reptiles"}
-        }
-    
-    def _create_species_directory(self, species):
-        """Create directory structure for a species."""
-        species_dir = os.path.join(self.output_dir, species.replace(" ", "_"))
-        os.makedirs(species_dir, exist_ok=True)
-        return species_dir
-    
-    def _download_refseq_annotation(self, species, info):
-        """Download RefSeq annotation for a single species."""
-        try:
-            self.logger.info(f"Processing {species} ({info['common_name']}) for RefSeq...")
-            
-            # Search for the genome
-            search_term = f'"{species}"[Organism] AND RefSeq[Source] AND latest[RefSeq Status]'
-            handle = Entrez.esearch(db="genome", term=search_term)
-            record = Entrez.read(handle)
-            handle.close()
-            
-            if not record["IdList"]:
-                self.logger.warning(f"No RefSeq genome found for {species}")
-                return False
-            
-            genome_id = record["IdList"][0]
-            
-            # Create species directory
-            species_dir = self._create_species_directory(species)
-            
-            # Download GFF annotation file
-            handle = Entrez.efetch(db="genome", id=genome_id, rettype="gff", retmode="text")
-            gff_content = handle.read()
-            handle.close()
-            
-            # Save GFF file
-            gff_file = os.path.join(species_dir, f"{species.replace(' ', '_')}_refseq.gff")
-            with open(gff_file, "w") as f:
-                f.write(gff_content)
-            
-            self.logger.info(f"Successfully downloaded RefSeq annotations for {species}")
-            return True
-            
-        except Exception as e:
-            self.logger.error(f"Error downloading RefSeq for {species}: {str(e)}")
-            return False
-    
-    def _download_ensembl_annotation(self, species, info):
-        """Download Ensembl annotation for a single species."""
-        try:
-            self.logger.info(f"Processing {species} ({info['common_name']}) for Ensembl...")
-            
-            # Create species directory
-            species_dir = self._create_species_directory(species)
-            
-            # Format species name for Ensembl
-            ensembl_species = species.lower().replace(" ", "_")
-            
-            # Get latest release
-            release = self._get_latest_ensembl_release()
-            
-            # Download GFF annotation file
-            gff_url = f"https://ftp.ensembl.org/pub/release-{release}/gff3/{ensembl_species}/"
-            gff_file = f"{ensembl_species.capitalize()}.{release}.gff3.gz"
-            
-            response = requests.get(gff_url + gff_file, stream=True)
-            if response.status_code == 200:
-                # Save compressed file
-                gz_file = os.path.join(species_dir, gff_file)
-                with open(gz_file, "wb") as f:
-                    f.write(response.content)
-                
-                # Decompress file
-                with gzip.open(gz_file, "rb") as f_in:
-                    with open(gz_file[:-3], "wb") as f_out:
-                        shutil.copyfileobj(f_in, f_out)
-                
-                # Remove compressed file
-                os.remove(gz_file)
-                self.logger.info(f"Successfully downloaded Ensembl annotations for {species}")
-                return True
-            else:
-                self.logger.warning(f"No Ensembl annotations found for {species}")
-                return False
-                
-        except Exception as e:
-            self.logger.error(f"Error downloading Ensembl for {species}: {str(e)}")
-            return False
-    
-    def download_refseq_annotations(self):
-        """Download genome annotations from NCBI RefSeq for all species."""
-        self.logger.info("Starting RefSeq downloads...")
-        
-        with ThreadPoolExecutor(max_workers=self.max_workers) as executor:
-            future_to_species = {
-                executor.submit(self._download_refseq_annotation, species, info): species
-                for species, info in self.training_species.items()
-            }
-            
-            for future in tqdm(as_completed(future_to_species), total=len(future_to_species), desc="Downloading RefSeq"):
-                species = future_to_species[future]
-                try:
-                    success = future.result()
-                    self.download_status['refseq'][species] = success
-                except Exception as e:
-                    self.logger.error(f"Error processing {species}: {str(e)}")
-                    self.download_status['failed'].append(species)
-    
-    def download_ensembl_annotations(self):
-        """Download genome annotations from Ensembl for all species."""
-        self.logger.info("Starting Ensembl downloads...")
-        
-        with ThreadPoolExecutor(max_workers=self.max_workers) as executor:
-            future_to_species = {
-                executor.submit(self._download_ensembl_annotation, species, info): species
-                for species, info in self.training_species.items()
-            }
-            
-            for future in tqdm(as_completed(future_to_species), total=len(future_to_species), desc="Downloading Ensembl"):
-                species = future_to_species[future]
-                try:
-                    success = future.result()
-                    self.download_status['ensembl'][species] = success
-                except Exception as e:
-                    self.logger.error(f"Error processing {species}: {str(e)}")
-                    self.download_status['failed'].append(species)
-    
-    def _get_latest_ensembl_release(self):
-        """Get the latest Ensembl release number."""
-        response = requests.get("https://rest.ensembl.org/info/data/")
-        data = response.json()
-        return data["releases"][-1]
-    
-    def save_download_status(self):
-        """Save download status to a JSON file."""
-        status_file = os.path.join(self.output_dir, 'download_status.json')
-        with open(status_file, 'w') as f:
-            json.dump(self.download_status, f, indent=4)
-        self.logger.info(f"Download status saved to {status_file}")
-    
-    def generate_summary(self):
-        """Generate a summary of the download process."""
-        total_species = len(self.training_species)
-        refseq_success = sum(1 for success in self.download_status['refseq'].values() if success)
-        ensembl_success = sum(1 for success in self.download_status['ensembl'].values() if success)
-        failed = len(self.download_status['failed'])
-        
-        summary = f"""
-Download Summary:
-----------------
-Total species: {total_species}
-RefSeq downloads successful: {refseq_success}
-Ensembl downloads successful: {ensembl_success}
-Failed downloads: {failed}
 
-Failed species:
-{chr(10).join(self.download_status['failed']) if self.download_status['failed'] else 'None'}
-"""
-        self.logger.info(summary)
-        
-        # Save summary to file
-        summary_file = os.path.join(self.output_dir, 'download_summary.txt')
-        with open(summary_file, 'w') as f:
-            f.write(summary)
-        self.logger.info(f"Summary saved to {summary_file}")
+    def _setup_directories(self):
+        os.makedirs(self.output_dir, exist_ok=True)
+        os.makedirs(os.path.join(self.output_dir, "refseq"), exist_ok=True)
+        os.makedirs(os.path.join(self.output_dir, "fasta"), exist_ok=True)
+
+    def _rate_limit(self):
+        current_time = time.time()
+        time_since_last = current_time - self.last_refseq_request
+        if time_since_last < self.refseq_delay:
+            time.sleep(self.refseq_delay - time_since_last)
+        self.last_refseq_request = time.time()
+
+    def _download_annotation(self, species: str) -> bool:
+        try:
+            self._rate_limit()
+            if species in self.ftp_dirs:
+                ftp_dir = self.ftp_dirs[species]
+                basename = ftp_dir.rstrip('/').split('/')[-1]
+                url = f"{ftp_dir}{basename}_genomic.gff.gz"
+                output_file = os.path.join(self.output_dir, "refseq", f"{species.replace(' ', '_')}.gff.gz")
+                if os.path.exists(output_file):
+                    logging.info(f"Annotation file for {species} already exists, skipping download.")
+                    self.download_status['refseq'][species] = True
+                    return True
+                r = requests.get(url, stream=True)
+                if r.status_code == 200:
+                    with open(output_file, 'wb') as f:
+                        for chunk in r.iter_content(chunk_size=8192):
+                            if chunk:
+                                f.write(chunk)
+                    logging.info(f"Successfully downloaded annotation for {species} from {url}")
+                    self.download_status['refseq'][species] = True
+                    return True
+                else:
+                    logging.error(f"Failed to download annotation for {species} from {url} (HTTP {r.status_code})")
+                    self.download_status['refseq'][species] = False
+                    return False
+            else:
+                logging.error(f"No FTP directory mapping for {species}. Please add it to ftp_dirs.")
+                self.download_status['refseq'][species] = False
+                return False
+        except Exception as e:
+            logging.error(f"Error downloading annotation for {species}: {str(e)}")
+            self.download_status['refseq'][species] = False
+            return False
+
+    def _download_fasta(self, species: str) -> bool:
+        try:
+            self._rate_limit()
+            if species in self.ftp_dirs:
+                ftp_dir = self.ftp_dirs[species]
+                basename = ftp_dir.rstrip('/').split('/')[-1]
+                url = f"{ftp_dir}{basename}_genomic.fna.gz"
+                output_file = os.path.join(self.output_dir, "fasta", f"{species.replace(' ', '_')}.fna.gz")
+                if os.path.exists(output_file):
+                    logging.info(f"FASTA file for {species} already exists, skipping download.")
+                    return True
+                r = requests.get(url, stream=True)
+                if r.status_code == 200:
+                    with open(output_file, 'wb') as f:
+                        for chunk in r.iter_content(chunk_size=8192):
+                            if chunk:
+                                f.write(chunk)
+                    logging.info(f"Successfully downloaded FASTA for {species} from {url}")
+                    return True
+                else:
+                    logging.error(f"Failed to download FASTA for {species} from {url} (HTTP {r.status_code})")
+                    return False
+            else:
+                logging.error(f"No FTP directory mapping for {species}. Please add it to ftp_dirs.")
+                return False
+        except Exception as e:
+            logging.error(f"Error downloading FASTA for {species}: {str(e)}")
+            return False
+
+    def download_all_annotations(self):
+        total_species = len(self.training_species)
+        logging.info("Starting annotation and FASTA downloads (direct FTP only)...")
+        with ThreadPoolExecutor(max_workers=self.max_workers) as executor:
+            futures = []
+            for species in self.training_species:
+                logging.info(f"Processing {species} ...")
+                futures.append(executor.submit(self._download_annotation, species))
+                futures.append(executor.submit(self._download_fasta, species))
+            for future in tqdm(as_completed(futures), total=2*total_species, desc="Downloading Annotations and FASTA"):
+                future.result()
+        self._save_download_status()
+        self._generate_summary()
+
+    def _save_download_status(self):
+        status_file = os.path.join(self.output_dir, "download_status.json")
+        self.download_status['last_updated'] = time.strftime('%Y-%m-%d %H:%M:%S')
+        with open(status_file, 'w') as f:
+            import json
+            json.dump(self.download_status, f, indent=4)
+        logging.info(f"Download status saved to {status_file}")
+
+    def _generate_summary(self):
+        logging.info("\nDownload Summary:")
+        logging.info("-" * 50)
+        success_count = sum(1 for status in self.download_status['refseq'].values() if status)
+        total_count = len(self.download_status['refseq'])
+        logging.info(f"REFSEQ: {success_count}/{total_count} successful downloads")
+        logging.info("-" * 50)
 
 def main():
-    # Example usage
-    email = "your.email@example.com"  # Replace with your email
-    downloader = GenomeAnnotationDownloader(email)
-    
-    try:
-        # Download annotations from both sources
-        downloader.download_refseq_annotations()
-        downloader.download_ensembl_annotations()
-        
-        # Save status and generate summary
-        downloader.save_download_status()
-        downloader.generate_summary()
-        
-    except KeyboardInterrupt:
-        print("\nDownload interrupted by user. Saving progress...")
-        downloader.save_download_status()
-        downloader.generate_summary()
-    except Exception as e:
-        print(f"\nAn error occurred: {str(e)}")
-        downloader.save_download_status()
-        downloader.generate_summary()
+    downloader = GenomeAnnotationDownloader()
+    downloader.download_all_annotations()
 
 if __name__ == "__main__":
-    main() 
+    main()

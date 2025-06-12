@@ -1,6 +1,6 @@
 # Genome Annotation Model
 
-A deep learning model for genome annotation, trained on diverse species to predict functional elements in DNA sequences.
+A deep learning model for genome annotation using DNA-BERT architecture, trained on diverse species to predict functional elements in DNA sequences (Non-coding, Coding, Regulatory regions).
 
 ## Quick Start
 
@@ -17,15 +17,40 @@ pip install -r requirements.txt
 # Download genome annotations
 python download_annotations.py
 
-# Train the model
-python model.py
+# Train the model (all organisms)
+python model.py --epochs 10 --batch_size 32
+
+# Train on single organism (faster for testing)
+python model.py --organism "escherichia_coli" --epochs 5 --batch_size 16
 
 # Evaluate the model
-python evaluate.py
+python evaluate.py --checkpoint checkpoints/best_model.pt
 
-# View evaluation results
-# Open the generated HTML report in your browser
+# Generate HTML evaluation report
+python evaluate_display.py --results_file evaluation_results/comprehensive_evaluation.json
 ```
+
+## Features
+
+### 🧬 Advanced Model Architecture
+- **DNA-BERT**: Pre-trained transformer architecture adapted for DNA sequences
+- **Hybrid CNN-LSTM**: Convolutional layers for local patterns + LSTM for sequence context
+- **Attention Mechanism**: Focus on relevant genomic regions
+- **Multi-class Classification**: Predicts Non-coding, Coding, and Regulatory elements
+
+### 📊 Comprehensive Training Features
+- **Real-time Progress Tracking**: Live progress bars with ETA, batch speed, and metrics
+- **System Monitoring**: CPU, memory, and GPU usage tracking
+- **Per-epoch Checkpointing**: Automatic model saving after each epoch
+- **TensorBoard Integration**: Real-time training visualization
+- **Single Organism Training**: Train on specific species for faster experimentation
+
+### 🔍 Advanced Evaluation & Visualization
+- **Detailed Metrics**: Accuracy, precision, recall, F1-score per class and overall
+- **Interactive HTML Reports**: Beautiful, responsive evaluation reports
+- **Training History Visualization**: Loss curves, accuracy plots, learning rate schedules
+- **Confusion Matrix Analysis**: Visual representation of model predictions
+- **Per-class Performance**: Detailed breakdown by annotation type
 
 ## Installation Guide
 
@@ -208,11 +233,40 @@ The model is trained on genome annotations from 30 diverse species across multip
 
 ## Model Architecture
 
-The model uses a hybrid architecture combining:
-- Convolutional layers for local pattern recognition
-- Bidirectional LSTM layers for sequence context
-- Attention mechanism for focusing on relevant regions
-- Dense layers for final classification
+The **DNABERTModel** uses a sophisticated hybrid architecture:
+
+```
+Input DNA Sequence (1000 bp)
+    ↓
+DNA-BERT Encoder (12 layers, 768 hidden size)
+    ↓ 
+Convolutional Layers (Pattern Recognition)
+    ├── Conv1D (768 → 256, kernel=3)
+    ├── BatchNorm + ReLU
+    ├── Conv1D (256 → 128, kernel=3)
+    └── BatchNorm + ReLU
+    ↓
+Bidirectional LSTM (Sequence Context)
+    ├── 2 layers, 64 hidden units each
+    └── Dropout (0.1)
+    ↓
+Attention Mechanism (Focus on Important Regions)
+    ├── Linear (128 → 64)
+    ├── Tanh activation
+    └── Linear (64 → 1) + Softmax
+    ↓
+Classification Head
+    ├── Linear (128 → 64)
+    ├── ReLU + Dropout
+    └── Linear (64 → 3) [Non-coding, Coding, Regulatory]
+```
+
+### Key Components:
+- **DNA-BERT**: Transformer encoder pre-trained on DNA sequences
+- **CNN Layers**: Local pattern recognition (motifs, regulatory elements)
+- **LSTM Layers**: Long-range dependencies and sequence context
+- **Attention**: Weighted importance of different sequence regions
+- **Classification**: Multi-class prediction with probability outputs
 
 ## Model Comparison
 
@@ -264,134 +318,409 @@ Results are presented in an interactive HTML report with:
 - Species-wise comparisons
 - Error analysis
 
-## System Requirements
-
-- Python 3.8+
-- CUDA-capable GPU (recommended)
-- 16GB RAM minimum
-- 50GB free disk space
-
 ## Usage
 
 ### 1. Download Genome Annotations
 ```bash
+# Edit your email in download_annotations.py first
 python download_annotations.py
 ```
-Edit the email in `download_annotations.py` before running.
 
-### 2. Train the Model
-```bash
-python model.py
-```
-The model will be saved in the `models` directory.
+### 2. Training Options
 
-### 3. Evaluate the Model
+#### Train on All Organisms (Comprehensive)
 ```bash
-python evaluate.py
-```
-This generates an HTML report in the `results/reports` directory.
+# Full training with default parameters
+python model.py --epochs 20 --batch_size 32 --learning_rate 1e-4
 
-### 4. Compare Models
-```bash
-python compare_models.py
+# With custom settings
+python model.py \
+    --epochs 50 \
+    --batch_size 64 \
+    --learning_rate 2e-4 \
+    --sequence_length 1000 \
+    --save_dir my_checkpoints
 ```
-This will train and evaluate different model architectures.
+
+#### Train on Single Organism (Fast Testing)
+```bash
+# Quick training on E. coli
+python model.py --organism "escherichia_coli" --epochs 10
+
+# Train on human data
+python model.py --organism "homo_sapiens" --epochs 15 --batch_size 16
+
+# Train on plant data
+python model.py --organism "arabidopsis_thaliana" --epochs 12
+```
+
+#### Training Parameters
+| Parameter | Default | Description |
+|-----------|---------|-------------|
+| `--epochs` | 10 | Number of training epochs |
+| `--batch_size` | 32 | Batch size for training |
+| `--learning_rate` | 1e-4 | Learning rate for optimizer |
+| `--sequence_length` | 1000 | DNA sequence length (bp) |
+| `--organism` | None | Single organism name (optional) |
+| `--save_dir` | checkpoints | Directory for saving models |
+| `--data_dir` | genome_annotations | Data directory path |
+
+### 3. Real-time Training Monitoring
+
+During training, you'll see:
+```
+============================================================
+SYSTEM INFORMATION
+============================================================
+Platform: Windows-10-10.0.19044-SP0
+Processor: AMD64 Family 23 Model 113 Stepping 0, AuthenticAMD
+CPU Cores: 16
+Total Memory: 32.00 GB
+GPU Available: True
+GPU Name: NVIDIA GeForce RTX 3080
+GPU Memory: 10.00 GB
+============================================================
+
+Processing species: 100%|██████████| 5/5 [02:30<00:00, 30.1s/species]
+
+================================================================================
+EPOCH 1/10
+================================================================================
+System Resources:
+  CPU Usage: 45.2%
+  Memory Usage: 8.45 GB
+  GPU Memory: 3.21 GB allocated, 4.15 GB reserved
+
+Training Epoch  1: 100%|██████████| 156/156 [03:45<00:00, 1.4batch/s, Loss=0.8234, Acc=0.6789, LR=1.00e-04, ETA=00:00:00]
+Validation Epoch  1: 100%|██████████| 39/39 [00:32<00:00, 2.1batch/s, Loss=0.7123, Acc=0.7234, ETA=00:00:00]
+
+EPOCH 1 RESULTS:
+  Time: 258.34s (4.3 min)
+  Train - Loss: 0.823456, Accuracy: 0.678934
+  Valid - Loss: 0.712345, Accuracy: 0.723456
+  Learning Rate: 1.00e-04
+  ETA for completion: 02:15:30
+  ★ NEW BEST MODEL! Validation accuracy: 0.723456
+  Checkpoint saved: checkpoints/checkpoint_epoch_001.pt
+```
+
+### 4. Evaluation
+
+#### Basic Evaluation
+```bash
+# Evaluate best model
+python evaluate.py --checkpoint checkpoints/best_model.pt
+
+# Evaluate specific checkpoint
+python evaluate.py --checkpoint checkpoints/checkpoint_epoch_020.pt
+
+# Evaluate on single organism
+python evaluate.py \
+    --checkpoint checkpoints/best_model.pt \
+    --organism "escherichia_coli" \
+    --output_dir my_results
+```
+
+#### Evaluation Output
+```
+============================================================
+EVALUATION RESULTS
+============================================================
+Overall Accuracy: 0.8567
+Overall Precision: 0.8234
+Overall Recall: 0.8756
+Overall F1-Score: 0.8489
+
+Per-Class Results:
+Non-coding:
+  Precision: 0.8123
+  Recall: 0.8456
+  F1-Score: 0.8287
+  Support: 1234
+Coding:
+  Precision: 0.8567
+  Recall: 0.8234
+  F1-Score: 0.8398
+  Support: 2345
+Regulatory:
+  Precision: 0.7989
+  Recall: 0.8567
+  F1-Score: 0.8267
+  Support: 876
+```
+
+### 5. Generate HTML Reports
+```bash
+# Generate interactive evaluation report
+python evaluate_display.py \
+    --results_file evaluation_results/comprehensive_evaluation.json \
+    --output_dir evaluation_results
+
+# Open the generated HTML file in your browser
+# Location: evaluation_results/reports/evaluation_report_YYYYMMDD_HHMMSS.html
+```
+
+### 6. Monitoring with TensorBoard
+```bash
+# Start TensorBoard server
+tensorboard --logdir checkpoints/tensorboard
+
+# Open in browser: http://localhost:6006
+```
 
 ## Model Customization
 
-### Architecture Modifications
+### Architecture Parameters
 ```python
-from model import GenomeAnnotationModel
+from model import DNABERTModel
 
-# Add convolutional layers
-model = GenomeAnnotationModel(
-    num_conv_layers=4,
-    conv_filters=[64, 128, 256, 512]
+# Custom model configuration
+model = DNABERTModel(
+    sequence_length=2000,           # Longer sequences
+    num_classes=5,                  # More annotation types
+    hidden_size=512,                # Smaller model
+    num_hidden_layers=8,            # Fewer layers
+    num_attention_heads=8,          # Fewer attention heads
+    classifier_dropout=0.2          # Higher dropout
 )
 ```
 
-### Hyperparameter Tuning
+### Training Configuration
 ```python
-# Custom training parameters
-model.train(
-    batch_size=32,
-    learning_rate=0.001,
-    epochs=50
+# Custom training with specific parameters
+history = train_model(
+    model=model,
+    train_loader=train_loader,
+    val_loader=val_loader,
+    num_epochs=25,
+    learning_rate=5e-5,
+    weight_decay=0.02,
+    max_grad_norm=2.0,
+    device="cuda"
 )
 ```
 
 ## Examples
 
-### Training with Custom Parameters
-```python
-from model import GenomeAnnotationModel
+### Single Organism Training
+```bash
+# Fast training on bacterial genome
+python model.py \
+    --organism "escherichia_coli" \
+    --epochs 15 \
+    --batch_size 64 \
+    --learning_rate 2e-4
 
-model = GenomeAnnotationModel(
-    sequence_length=1000,
-    num_classes=5,
-    learning_rate=0.001
-)
-
-model.train(
-    batch_size=32,
-    epochs=50,
-    validation_split=0.2
-)
+# Training on mammalian genome
+python model.py \
+    --organism "mus_musculus" \
+    --epochs 25 \
+    --batch_size 32 \
+    --sequence_length 1500
 ```
 
-### Processing Custom Genome Data
-```python
-from model import GenomeAnnotationModel
+### Custom Evaluation
+```bash
+# Detailed evaluation with custom output
+python evaluate.py \
+    --checkpoint checkpoints/best_model.pt \
+    --batch_size 64 \
+    --output_dir detailed_evaluation
 
-model = GenomeAnnotationModel()
-model.process_sequence("ATCG...")  # Your DNA sequence
+# Compare multiple checkpoints
+for epoch in 10 15 20; do
+    python evaluate.py \
+        --checkpoint checkpoints/checkpoint_epoch_${epoch}.pt \
+        --output_dir evaluation_epoch_${epoch}
+done
 ```
 
-### Evaluating on New Species
+### Prediction on New Sequences
 ```python
-from model import GenomeAnnotationModel
+from model import DNABERTModel
 
-model = GenomeAnnotationModel()
-model.load_weights("models/best_model.h5")
-results = model.evaluate("path/to/new/species.fasta")
+# Load trained model
+model = DNABERTModel.from_pretrained("models/dnabert")
+
+# Predict on new sequence
+dna_sequence = "ATCGATCGATCG..." * 100  # 1000 bp sequence
+predictions = model.predict(dna_sequence)
+
+# Get prediction probabilities
+non_coding_prob = predictions[0][0]
+coding_prob = predictions[0][1] 
+regulatory_prob = predictions[0][2]
+
+print(f"Non-coding: {non_coding_prob:.3f}")
+print(f"Coding: {coding_prob:.3f}")
+print(f"Regulatory: {regulatory_prob:.3f}")
+```
+
+## Performance Optimization
+
+### GPU Optimization
+```bash
+# Use mixed precision training (faster, less memory)
+python model.py --epochs 10 --batch_size 64 --amp
+
+# Optimize for multiple GPUs
+python model.py --epochs 10 --batch_size 128 --multi_gpu
+```
+
+### Memory Optimization
+```bash
+# Reduce memory usage
+python model.py \
+    --batch_size 16 \
+    --sequence_length 512 \
+    --num_workers 2
+
+# For limited memory systems
+python model.py \
+    --organism "escherichia_coli" \
+    --batch_size 8 \
+    --sequence_length 500
+```
+
+### Speed Optimization
+```bash
+# Fast training for development
+python model.py \
+    --organism "escherichia_coli" \
+    --epochs 5 \
+    --batch_size 64 \
+    --num_workers 8
 ```
 
 ## Troubleshooting Guide
 
-### Download Issues
-- **Problem**: NCBI connection timeout
-  - **Solution**: Check internet connection and try again
-- **Problem**: Ensembl download fails
-  - **Solution**: Verify species name format
-
 ### Training Issues
-- **Problem**: Out of memory
-  - **Solution**: Reduce batch size or sequence length
-- **Problem**: Slow training
-  - **Solution**: Enable GPU acceleration
+
+#### Out of Memory Errors
+```bash
+# Reduce batch size
+python model.py --batch_size 8
+
+# Reduce sequence length
+python model.py --sequence_length 512
+
+# Use single organism
+python model.py --organism "escherichia_coli"
+```
+
+#### Slow Training
+```bash
+# Check GPU availability
+python -c "import torch; print(torch.cuda.is_available())"
+
+# Increase batch size (if memory allows)
+python model.py --batch_size 64
+
+# Use more workers
+python model.py --num_workers 8
+```
+
+#### Poor Performance
+```bash
+# Increase training epochs
+python model.py --epochs 50
+
+# Adjust learning rate
+python model.py --learning_rate 5e-5
+
+# Use larger model
+python model.py --hidden_size 1024 --num_hidden_layers 16
+```
 
 ### Evaluation Issues
-- **Problem**: Missing metrics
-  - **Solution**: Check data format and labels
-- **Problem**: Low accuracy
-  - **Solution**: Verify data preprocessing
 
-## Contributing
+#### Missing Checkpoints
+```bash
+# List available checkpoints
+ls checkpoints/
 
-1. Fork the repository
-2. Create a feature branch
-3. Commit your changes
-4. Push to the branch
-5. Create a Pull Request
+# Use latest checkpoint
+python evaluate.py --checkpoint checkpoints/checkpoint_epoch_$(ls checkpoints/ | grep -o 'epoch_[0-9]*' | sort -V | tail -1 | cut -d_ -f2).pt
+```
+
+#### Report Generation Fails
+```bash
+# Check results file exists
+ls evaluation_results/comprehensive_evaluation.json
+
+# Generate with verbose output
+python evaluate_display.py --results_file evaluation_results/comprehensive_evaluation.json --verbose
+```
+
+## File Structure
+
+```
+genome-annotation-model/
+├── model.py                      # Main training script with DNABERTModel
+├── evaluate.py                   # Model evaluation script
+├── evaluate_display.py           # HTML report generation
+├── download_annotations.py       # Data download script
+├── requirements.txt              # Python dependencies
+├── README.md                     # This file
+├── genome_annotations/           # Downloaded genome data
+│   ├── refseq/                  # RefSeq GFF files
+│   └── fasta/                   # FASTA sequence files
+├── checkpoints/                  # Model checkpoints
+│   ├── best_model.pt            # Best performing model
+│   ├── checkpoint_epoch_*.pt    # Per-epoch checkpoints
+│   └── tensorboard/             # TensorBoard logs
+├── models/                       # Final saved models
+│   └── dnabert/                 # DNA-BERT model files
+├── evaluation_results/           # Evaluation outputs
+│   ├── comprehensive_evaluation.json
+│   ├── confusion_matrix.png
+│   ├── training_history.png
+│   └── reports/                 # HTML evaluation reports
+└── training.log                 # Training log file
+```
+
+## System Requirements
+
+### Minimum Requirements
+- Python 3.8+
+- 8GB RAM
+- 20GB free disk space
+- CPU training support
+
+### Recommended Requirements
+- Python 3.9+
+- CUDA-capable GPU (RTX 3070 or better)
+- 16GB+ RAM
+- 50GB+ free disk space
+- NVIDIA CUDA 11.0+
+
+### Optimal Requirements
+- Python 3.10+
+- High-end GPU (RTX 4080/4090, A100)
+- 32GB+ RAM
+- 100GB+ SSD storage
+- NVIDIA CUDA 12.0+
 
 ## Citation
 
 If you use this model in your research, please cite:
-```
-@software{genome_annotation_model,
+```bibtex
+@software{dnabert_genome_annotation,
   author = {Your Name},
-  title = {Genome Annotation Model},
+  title = {DNA-BERT Genome Annotation Model},
   year = {2024},
-  url = {https://github.com/yourusername/genome-annotation-model}
+  url = {https://github.com/yourusername/genome-annotation-model},
+  note = {Deep learning model for genome annotation using DNA-BERT architecture}
 }
-``` 
+```
+
+## License
+
+This project is licensed under the MIT License - see the LICENSE file for details.
+
+## Acknowledgments
+
+- DNA-BERT architecture inspiration
+- NCBI and Ensembl for genomic data
+- PyTorch and Transformers libraries
+- Scientific computing community
